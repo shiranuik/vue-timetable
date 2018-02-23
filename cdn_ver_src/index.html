@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>sample timetable</title>
+
+</head>
+<body>
+
+<!-- メイン -->
+<div id="BoardMain">
+
+    <div>
+        <div class="terms"
+             v-cloak
+             v-for="(term,index) in termList"
+             @click="termIdOnChange()"
+             :id="term.id"
+             :class="{selected:term.id===selectedTermId}"
+        >
+            {{term.term_name}}
+        </div>
+    </div>
+
+    <!-- ローディング用 -->
+    <loading-template v-if="loading"></loading-template>
+
+    <div id="Board">
+    <div id="assigned">
+        <div id="topSpace"></div>
+        <div id="timeTick">
+            <svg :width="allWidth" :height="margin.top" id="timeTickSVG"><g class="x axis Top"></g></svg>
+        </div>
+        <div id="personLabel">
+            <svg :width="margin.left" :height="this.boardHeight" v-if="boardHeight">
+                <g is="person-component"
+                   v-for="(person,index) in personLabel"
+                   :x-scale="xScale"
+                   :y-scale="yScale"
+                   :person="person"
+                   :margin="margin"
+                   ></g>
+            </svg>
+            <div id="heightSpacer"></div>
+        </div>
+        <div id="mainBoard">
+            <svg :width="boardWidth" :height="boardHeight" id="timeTableSVG" v-if="this.boardHeight">
+                <g class="baseRect" @click="cancelActive">
+                    <rect id="mainBaseRect" class="baseLayerRect" :width="boardWidth" :height="boardHeight"></rect>
+                </g>
+                <g class="parsonLine"
+                   is="parson-lines"
+                   v-for="(parsonId , index) in parsonIdList"
+                   :key="parsonId"
+                   :teacher-id="parsonId"
+                   :x-scale="xScale"
+                   :y-scale="yScale"
+                   :max-date="maxDate"
+                   :min-date="minDate"
+                >
+                </g>
+                <g id="innerTick" class="x axis" :transform="mainBoardTranslate" fill="none"></g>
+                <g id="taskBase" v-if="!loading">
+                    <g is="schedule-component"
+                       v-for="(schedule ,index) in schedules"
+                       :key="index"
+                       :x-scale="xScale"
+                       :y-scale="yScale"
+                       :margin="margin"
+                       :schedule="schedule"></g>
+                    <g is="task-component"
+                       class="boarding"
+                       v-for="(task ,index) in tasks"
+                       v-if="task.boarding"
+                       :key="task.task_id + index"
+                       :x-scale="xScale"
+                       :y-scale="yScale"
+                       :task="task"
+                       :margin="margin"
+                    ></g>
+                </g>
+            </svg>
+        </div>
+    </div>
+    <div id="nonAssigned">
+        <div id="nonTopSpace"></div>
+        <div id="nonTimeTick">
+            <svg :width="allWidth" :height="margin.top" id="nonTimeSVG"><g class="x"></g></svg>
+        </div>
+        <div id="nonParsonLabel">
+            <div id="timetableList">
+                <ul class="parent">
+                    <li v-for="(timetable,index) in timetableList">
+                        <a :class="{selected :timetable.m_timetable_id === selectedTimetable}"
+                           @click="timetableOnChange(timetable)">
+                            {{timetable.timetable_name}}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <div id="nonMainBoard">
+            <svg :width="boardWidth" :height="nonBoardAllHeight" id="nonboardSVG" v-if="nonBoardAllHeight">
+                <g class="baseRect" @click="notConfirmRemoveAssigned">
+                    <rect id="nonboardBaseRect" class="baseLayerRect" :width="boardWidth" :height="nonBoardHeight"></rect>
+                </g>
+                <g id="nonAssignedInner" :transform="nonBoardTranslate" class="axis"></g>
+                <g id="taskBase" v-if="!loading">
+                    <g is="task-component"
+                       class="nonAssigned"
+                       v-for="(task ,index) in tasks"
+                       v-if="!task.boarding"
+                       :key="task.task_id"
+                       :x-scale="xScale"
+                       :y-scale="yScaleNonBoard"
+                       :task="task"
+                       :margin="margin"
+                    ></g>
+                </g>
+            </svg>
+        </div>
+    </div>
+</div>
+
+
+<!-- コンポーネントのView置き場 -->
+    <!-- ローディング用 -->
+    <script type="text/x-template" id="loading-template">
+        <div id="busy" :style="styles">
+            <div class="load-line"></div>
+        </div>
+    </script>
+    <!--  コマ用  -->
+    <script type="text/x-template" id="task-component">
+        <g class="taskBase">
+            <g class="task"
+               @mouseover="tooltipShow"
+               @mouseleave="tooltipHide"
+               @click="whenClicked"
+               :class="{active: isActive ,disabled:isParsonMode, otherTimetable:isOtherTimetable}"
+               v-if="(yScale(task.t_teacher_id))"
+            >
+                <g is="task-rect" :task="task" :y-scale="yScale" :x-scale="xScale" :is-active="isActive"></g>
+                <!-- Label-->
+                <g is="task-text" :task="task" :y-scale="yScale" :x-scale="xScale" v-if="task.smallLabel"></g>
+                <!-- StudentName-->
+                <g is="task-name" :task="task" :y-scale="yScale" :x-scale="xScale" v-if="task.student_name"></g>
+            </g>
+            <g is="task-button" :task="task" :y-scale="yScale" :x-scale="xScale" v-if="isActive"></g>
+        </g>
+    </script>
+    <script type="text/x-template" id="task-rect">
+        <rect :class="classStr" :transform="translate" :width="widthCalc" :height="heightCalc" :y="y" x=-2 rx="3" ry="3"></rect>
+    </script>
+    <script type="text/x-template" id="task-text">
+        <text class="smallText" :y="y" x=0 :transform="translate" :width="widthCalc" :height="heightCalc">
+            {{text}}
+        </text>
+    </script>
+    <script type="text/x-template" id="task-button">
+        <g @click="buttonClicked">
+            <rect class="taskButton" rx=3 ry=3 :y="y" :transform="translate" :width="width" height="18"></rect>
+            <text class="buttonName" :y="(task.boarding)?y+15:y+12" :x="(task.boarding)?1:3" :transform="translate" :style="style">{{buttonName}}</text>
+        </g>
+    </script>
+    <!-- スケジュール用 -->
+    <script type="text/x-template" id="schedule-component">
+        <g class="schedule"
+           :id="schedule.schedule_id"
+           @click="whenClicked"
+           v-if="!collide"
+        >
+            <g is="schedule-rect" :schedule="schedule" :y-scale="yScale" :x-scale="xScale"></g>
+        </g>
+    </script>
+    <script type="text/x-template" id="schedule-rect">
+        <g>
+            <rect :class="schedule.status" :transform="translate" :width="widthCalc" :height="heightCalc" :y="y" x=-2 rx="3" ry="3"></rect>
+        </g>
+    </script>
+
+    <!--  Label用  -->
+    <script type="text/x-template" id="teacher-component">
+        <g class="parsonLabel" @click="whenClicked">
+            <g is="parson-rect" :parson="parson" :y-scale="yScale" :x-scale="xScale" :margin="margin"></g>
+            <g is="parson-text" :parson="parson" :y-scale="yScale" :x-scale="xScale" :margin="margin"></g>
+        </g>
+    </script>
+    <script type="text/x-template" id="parson-rect">
+        <rect :class="{parson:true,active:(parson.t_parson_id === this.$root.selectedParsonId)}" :transform="translate" :width="widthCalc" :height="heightCalc" y=0 x=-2 ></rect>
+    </script>
+    <script type="text/x-template" id="parson-text">
+        <text class="parsonName" :y="y" x=0 :transform="translate" :width="widthCalc" :height="heightCalc">
+            {{parson.name}}
+        </text>
+    </script>
+    <!-- 区切り線 -->
+    <script type="text/x-template" id="parson-lines">
+        <g>
+            <line class="parsonline" :x1="x1" :x2="x2" :y1="y" :y2="y"></line>
+        </g>
+    </script>
+
+<!-- 各種ライブラリ読み込み -->
+<script src="https://www.promisejs.org/polyfills/promise-6.1.0.min.js"></script>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<script src="common.js"></script>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://unpkg.com/vue"></script>
+<script src="timetable.js"></script>
+</body>
+</html>
